@@ -27,5 +27,60 @@ scale_colour_discrete = scale_color_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
 
+# Problem 1
+
+Importing `birthweigth_df` data set
+
+```{r}
+birthweight_df = read_csv("./data/birthweight.csv")
+```
+
+Cleaning dataset
+
+* `frace` = "unknown" (9) to missing (n/a)
+* `malform` changed from `numeric` to `factor`
+
+## any other data cleaning to do???
+* no other missing values
+* most variables continuous - keep as `numeric`
+
+```{r}
+birthweight_df %>% 
+  mutate(frace = ifelse(is.na(frace), 9, frace),
+         malform = as.factor(malform))
+```
+
+### Regression model proposal 
+
+Previous research shows that many of the variables in this data set are associated with birth weight. In my proposed model I am looking to combine 2 variables, 2 biological (`babysex` and `delwt`) and one environmental predictor (`smoken`) as well as the interactions as a model of birth weight. 
+
+```{r}
+my_fit = lm(bwt ~ delwt * babysex + smoken * babysex, data = birthweight_df)
+
+broom::tidy(my_fit)
+```
+
+Plotting residuals against fitted values 
+
+```{r}
+birthweight_df %>% 
+  modelr::add_residuals(my_fit) %>% 
+  modelr::add_predictions(my_fit) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+  geom_point()
+```
+
+Comparing to other models
+
+```{r}
+main_effects = 
+  lm(bwt ~ blength + gaweeks, data = birthweight_df)
+
+interaction = 
+  lm(bwt ~ bhead * blength * babysex, data = birthweight_df)
+
+broom::tidy(main_effects)
+broom::tidy(interaction)
+```
 
 
