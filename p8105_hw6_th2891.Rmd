@@ -45,14 +45,22 @@ Cleaning dataset
 * most variables continuous - keep as `numeric`
 
 ```{r}
-birthweight_df %>% 
+birthweight_df  = 
+  birthweight_df  %>% 
   mutate(frace = ifelse(is.na(frace), 9, frace),
-         malform = as.factor(malform))
+         frace = factor(frace, levels = c("1", "2", "3", "4", "8"),
+                  labels = c("white", "black", "asian", "puerto rican", "other")), 
+        mrace = factor(mrace, levels = c("1", "2", "3", "4", "8"), labels = c("white", "black", "asian", "puerto rican", "other")),
+         malform = as.factor(malform),
+         babysex = factor(babysex, levels = c("1", "2"), labels = c("male", "female"))
+    )
 ```
 
 ### Regression model proposal 
 
 Previous research shows that many of the variables in this data set are associated with birth weight. In my proposed model I am looking to combine 2 variables, 2 biological (`babysex` and `delwt`) and one environmental predictor (`smoken`) as well as the interactions as a model of birth weight. 
+
+### COME BACK TO THIS MODEL 
 
 ```{r}
 my_fit = lm(bwt ~ delwt * babysex + smoken * babysex, data = birthweight_df)
@@ -85,7 +93,6 @@ broom::tidy(interaction)
 
 Comparing models with cross validation 
 
-
 ```{r}
 
 cv_df = 
@@ -108,12 +115,14 @@ cv_df =
   ) %>% 
   mutate(
     rmse_my_fit = map2_dbl(.x = my_fit, .y = test, ~rmse(model = .x, data = .y)),
-      rmse_main_effects = map2_dbl(.x = main_effects, .y = test, ~rmse(model = .x, data = .y)),
-     rmse_interaction = map2_dbl(.x = interaction, .y = test, ~rmse(model = .x, data = .y))
+    rmse_main_effects = map2_dbl(.x = main_effects, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_interaction = map2_dbl(.x = interaction, .y = test, ~rmse(model = .x, data = .y))
   )
 ```
 
 RMSE distributions
+
+### rmse values are way too high 
 
 ```{r}
 cv_df %>% 
@@ -128,4 +137,162 @@ cv_df %>%
   geom_boxplot()
 ```
 
-From this output, I would use the `interaction` model because it shows the lowest ditribution of RMSE scores. 
+From this output, I would use the `interaction` model because it shows the distribution of RMSE scores around the lowest value. 
+
+# Problem 2 
+
+Downloading 2017 Central Park weather data 
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+
+Looking at the association between `tmax` (response) and `tmin` (predictor)
+
+```{r}
+weather_df %>% 
+  ggplot(aes(x = tmin, y = tmax)) +
+  geom_point()
+```
+
+linear model:
+```{r}
+cp_linear = lm(tmax ~ tmin, data = weather_df)
+
+broom::tidy(cp_linear)
+```
+
+
+* Checking to see if bootstrap is working on n = 10
+
+* manipulating to get log(b0*b1)
+
+```{r}
+weather_bootstrap_results = 
+  weather_df %>% 
+  bootstrap(n = 10, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results)
+
+
+weather_bootstrap_results %>% 
+  select(strap_number, term, estimate) %>% 
+  pivot_wider(
+    names_from = "term",
+    values_from = "estimate"
+  ) %>% 
+  rename(
+    b0 = "(Intercept)", 
+    b1 = "tmin"
+  ) %>% 
+  mutate(
+    log_product = log(b0 * b1))
+                  
+```
+
+
+Bootstrap check (n = 10)
+
+* Broom::glance to get r-squred
+
+```{r}
+CP_bootstrap_rtest = 
+  weather_df %>%  
+  bootstrap(n = 10, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
+    results = map(models, broom::glance)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results)
+```
+
+Bootstrapping: sample = 5000 
+
+```{r}
+CP_bootstrap_results = 
+  weather_df %>%  
+  bootstrap(n = 5000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results)
+
+
+
+CP_bootstrap_r = 
+  weather_df %>%  
+  bootstrap(n = 5000, id = "strap_number") %>% 
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
+    results = map(models, broom::glance)
+  ) %>% 
+  select(strap_number, results) %>% 
+  unnest(results)
+```
+
+
+Plotting distribution of estimates from bootstrap results 
+```{r}
+ggplot_tmin_estimate =
+  CP_bootstrap_results %>% 
+  filter(term == "tmin") %>% 
+  ggplot(aes(estimate)) +
+  geom_density()
+```
+
+
+Plotting distribution of r-squared results 
+
+```{r}
+ggplot_r_estimate =
+  CP_bootstrap_r %>% 
+  ggplot(aes(r.squared)) +
+  geom_density()
+```
+
+Plotting distribution of log(b0*b1)
+
+```{r}
+ggplot_log_estimate =
+  CP_bootstrap_results %>% 
+    select(strap_number, term, estimate) %>% 
+    pivot_wider(
+      names_from = "term",
+      values_from = "estimate"
+    ) %>% 
+    rename(
+      b0 = "(Intercept)", 
+      b1 = "tmin"
+    ) %>% 
+    mutate(
+      log_product = log(b0 * b1)) %>% 
+    ggplot(aes(log_product)) +
+    geom_density()
+
+```
+
+
+
+Construct a bootstrap CI - bootstrap CI
+
+
+
+
