@@ -83,4 +83,49 @@ broom::tidy(main_effects)
 broom::tidy(interaction)
 ```
 
+Comparing models with cross validation 
 
+
+```{r}
+
+cv_df = 
+  crossv_mc(birthweight_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+```
+
+Fitting models and extracting RSME
+
+```{r}
+cv_df = 
+  cv_df %>% 
+  mutate(
+    my_fit = map(.x = train, ~lm(bwt ~ delwt * babysex + smoken * babysex, data = .x)),
+    main_effects = map(.x = train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    interaction = map(.x = train, ~lm(bwt ~ bhead * blength * babysex, data = .x))
+  ) %>% 
+  mutate(
+    rmse_my_fit = map2_dbl(.x = my_fit, .y = test, ~rmse(model = .x, data = .y)),
+      rmse_main_effects = map2_dbl(.x = main_effects, .y = test, ~rmse(model = .x, data = .y)),
+     rmse_interaction = map2_dbl(.x = interaction, .y = test, ~rmse(model = .x, data = .y))
+  )
+```
+
+RMSE distributions
+
+```{r}
+cv_df %>% 
+  select(.id, starts_with("rmse")) %>% 
+  pivot_longer(
+    rmse_my_fit:rmse_interaction,
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_boxplot()
+```
+
+From this output, I would use the `interaction` model because it shows the lowest ditribution of RMSE scores. 
